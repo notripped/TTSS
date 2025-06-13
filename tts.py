@@ -1,0 +1,147 @@
+import json
+import requests
+import asyncio
+import os
+from flask import Flask, request, jsonify, send_from_directory
+from pydub import AudioSegment
+from pydub.playback import play # Used for local testing of audio, not for Flask serving
+import edge_tts
+import logging
+from functools import wraps
+from flask_cors import CORS # <--- NEW IMPORT
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+app = Flask(__name__)
+CORS(app) # <--- NEW LINE: Enable CORS for all routes by default
+
+# Directory to save generated audio files
+AUDIO_DIR = 'generated_audio'
+os.makedirs(AUDIO_DIR, exist_ok=True)
+
+# Background music path is now explicitly set to None, as requested.
+# To re-enable, provide a valid path here.
+BACKGROUND_MUSIC_PATH = None
+DEFAULT_BG_VOLUME_REDUCTION_DB = 15 # This setting is now ignored as background music is off
+
+# --- Helper function to run async Edge-TTS operations in a synchronous Flask context ---
+def run_async(f):
+    """Decorator to run async functions within Flask routes."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        return asyncio.run(f(*args, **kwargs))
+    return decorated_function
+
+# --- API Endpoint: List available Edge-TTS voices ---
+@app.route('/api/voices', methods=['GET'])
+@run_async
+async def list_voices():
+    """
+    Fetches and returns a list of available Edge-TTS voices.
+    """
+    logging.info("Fetching available Edge-TTS voices.")
+    try:
+        voices = await edge_tts.list_voices()
+        voice_list = [{"id": voice["Name"], "name": f"{voice['FriendlyName']} ({voice['Gender']})"} for voice in voices]
+        logging.info(f"Found {len(voice_list)} voices.")
+        return jsonify(voice_list)
+    except Exception as e:
+        logging.error(f"Error fetching voices: {e}")
+        return jsonify({"error": "Failed to retrieve voices", "details": str(e)}), 500
+
+# --- API Endpoint: Generate Speech from text or uploaded file ---
+@app.route('/api/generate_audio', methods=['POST'])
+@run_async
+async def generate_audio_backend():
+    """
+    Generates speech from text using Edge-TTS, applies pacing.
+    It can accept text either from a JSON payload or from an uploaded text file.
+
+    If a text file is uploaded (under the field name 'text_file'),
+    parameters like voice_id, pacing, etc., should be sent as form-data fields.
+    Otherwise, if no file is present, it expects a JSON payload.
+    Background music mixing is disabled as per current requirements.
+    """
+    text_content = None
+    voice_id = 'en-US-JennyNeural' # Default voice
+    pacing_percentage = 0 # Default pacing
+
+    # Attempt to read from uploaded file first
+    if 'text_file' in request.files:
+        uploaded_file = request.files['text_file']
+        if uploaded_file.filename != '':
+            try:
+                text_content = uploaded_file.read().decode('utf-8')
+                logging.info(f"Received text from uploaded file: {uploaded_file.filename}")
+                # Read other parameters from form data when file is uploaded
+                voice_id = request.form.get('voice_id', voice_id)
+                try:
+                    pacing_percentage = int(request.form.get('pacing', pacing_percentage))
+                except ValueError:
+                    logging.warning(f"Invalid pacing value received from form: {request.form.get('pacing')}. Using default.")
+            except Exception as e:
+                logging.error(f"Error reading uploaded text file: {e}")
+                return jsonify({"error": "Failed to read uploaded text file."}), 400
+    # Fallback to JSON payload if no file is uploaded
+    elif request.is_json:
+        data = request.json
+        text_content = data.get('text')
+        voice_id = data.get('voice_id', voice_id)
+        pacing_percentage = data.get('pacing', pacing_percentage)
+        logging.info("Received text from JSON payload.")
+    else:
+        logging.warning("No text file uploaded and no JSON payload found.")
+        return jsonify({"error": "No text file uploaded and no JSON payload provided."}), 400
+
+    if not text_content or not text_content.strip():
+        logging.warning("Text content is empty after processing input.")
+        return jsonify({"error": "No text provided or text file was empty."}), 400
+
+    logging.info(f"Generating audio for text: '{text_content[:50]}...' with voice '{voice_id}' and pacing '{pacing_percentage}%'.")
+
+    try:
+        # Create a unique filename for the output audio
+        speech_output_file = os.path.join(AUDIO_DIR, f"speech_{os.urandom(8).hex()}.mp3")
+
+        # --- 1. Generate Speech using Edge-TTS ---
+        # Edge-TTS allows rate adjustment as a percentage, e.g., '+10%', '-20%'
+        rate_str = f"{'+' if pacing_percentage >= 0 else ''}{pacing_percentage}%"
+        communicate = edge_tts.Communicate(text_content, voice_id, rate=rate_str)
+        await communicate.save(speech_output_file)
+        logging.info(f"Speech generated and saved to {speech_output_file}")
+
+        # As background music is disabled, the speech_output_file is the final file.
+        output_url_path = os.path.basename(speech_output_file)
+
+        # Return URL to the generated audio
+        return jsonify({"audio_url": f"/audio/{output_url_path}"}), 200
+
+    except Exception as e:
+        logging.error(f"Error during audio generation: {e}", exc_info=True)
+        # Clean up any partial files if an error occurred
+        if os.path.exists(speech_output_file):
+            os.remove(speech_output_file)
+        return jsonify({"error": "Failed to generate audio", "details": str(e)}), 500
+
+# --- API Endpoint: Serve generated audio files ---
+@app.route('/audio/<filename>')
+def serve_audio(filename):
+    """
+    Serves the generated audio files from the AUDIO_DIR.
+    """
+    logging.info(f"Serving audio file: {filename}")
+    try:
+        return send_from_directory(AUDIO_DIR, filename, mimetype='audio/mpeg')
+    except FileNotFoundError:
+        logging.error(f"File not found: {filename}")
+        return jsonify({"error": "Audio file not found"}), 404
+    except Exception as e:
+        logging.error(f"Error serving file {filename}: {e}")
+        return jsonify({"error": "Error serving audio file", "details": str(e)}), 500
+
+
+# --- Main execution block for running the Flask app ---
+if __name__ == '__main__':
+    app.run(debug=True, port=5000)
+
