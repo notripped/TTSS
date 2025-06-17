@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import './App.css';
 
 // Main App component
 const App = () => {
@@ -6,6 +7,7 @@ const App = () => {
   const [script, setScript] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [duration, setDuration] = useState(3); // Default duration in minutes
 
   const [voiceOptions, setVoiceOptions] = useState([]);
   const [selectedVoice, setSelectedVoice] = useState('');
@@ -65,93 +67,28 @@ const App = () => {
     setUseUploadedFile(false); // Reset toggle
 
     try {
-      const prompt = `Generate a video script for a video about "${topic}". The script should be structured with a clear Hook, an Introduction, a Body with at least two main points, a Conclusion, and a Call to Action (CTA). For each section, provide a 'heading', 'dialogue', 'sceneDescription' (visuals/actions), and 'brollSuggestions' (list of B-roll footage ideas). Ensure the script is engaging and suitable for a 2-3 minute video.
-
-      Please provide the output in a JSON format matching the following schema:
-      {
-        "type": "OBJECT",
-        "properties": {
-          "title": { "type": "STRING" },
-          "videoLength": { "type": "STRING", "description": "e.g., '2-3 minutes', '5 minutes'" },
-          "sections": {
-            "type": "ARRAY",
-            "items": {
-              "type": "OBJECT",
-              "properties": {
-                "type": { "type": "STRING", "enum": ["Hook", "Introduction", "Body", "Conclusion", "Call to Action"] },
-                "heading": { "type": "STRING" },
-                "dialogue": { "type": "STRING" },
-                "sceneDescription": { "type": "STRING", "description": "Visuals/actions during this section" },
-                "brollSuggestions": {
-                  "type": "ARRAY",
-                  "items": { "type": "STRING" },
-                  "description": "Suggestions for B-roll footage"
-                }
-              },
-              "required": ["type", "heading", "dialogue", "sceneDescription"]
-            }
-          }
-        },
-        "required": ["title", "sections"]
-      }
-      `;
+      const prompt = `Generate a video script for a video about "${topic}". The script should be structured with a clear Hook, an Introduction, a Body with at least two main points, a Conclusion, and a Call to Action (CTA). For each section, provide a 'heading', 'dialogue', 'sceneDescription' (visuals/actions), and 'brollSuggestions' (list of B-roll footage ideas). Ensure the script is engaging and suitable for a ${duration} minute video. Adjust the content length and depth accordingly.`;
 
       let chatHistory = [];
       chatHistory.push({ role: "user", parts: [{ text: prompt }] });
 
-      const payload = {
-        contents: chatHistory,
-        generationConfig: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "OBJECT",
-            properties: {
-              "title": { "type": "STRING" },
-              "videoLength": { "type": "STRING", "description": "e.g., '2-3 minutes', '5 minutes'" },
-              "sections": {
-                "type": "ARRAY",
-                "items": {
-                  "type": "OBJECT",
-                  "properties": {
-                    "type": { "type": "STRING", "enum": ["Hook", "Introduction", "Body", "Conclusion", "Call to Action"] },
-                    "heading": { "type": "STRING" },
-                    "dialogue": { "type": "STRING" },
-                    "sceneDescription": { "type": "STRING", "description": "Visuals/actions during this section" },
-                    "brollSuggestions": {
-                      "type": "ARRAY",
-                      "items": { "type": "STRING" },
-                      "description": "Suggestions for B-roll footage"
-                    }
-                  },
-                  "required": ["type", "heading", "dialogue", "sceneDescription"]
-                }
-              }
-            },
-            "required": ["title", "sections"]
-          }
-        }
-      };
-
-      const apiKey = "AIzaSyBJXSadUPf3M0J7reB9BmyLc_dKC30bhf0"; // Canvas will provide this in runtime. Do not add API key validation.
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-
-      const response = await fetch(apiUrl, {
+      const response = await fetch('http://127.0.0.1:5000/api/generate_script', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          topic,
+          duration,
+        }),
       });
 
-      const result = await response.json();
-
-      if (result.candidates && result.candidates.length > 0 &&
-          result.candidates[0].content && result.candidates[0].content.parts &&
-          result.candidates[0].content.parts.length > 0) {
-        const jsonString = result.candidates[0].content.parts[0].text;
-        const parsedScript = JSON.parse(jsonString);
-        setScript(parsedScript);
-      } else {
-        setError('Failed to generate script: Unexpected response structure from LLM.');
+      if (!response.ok) {
+        throw new Error('Failed to generate script');
       }
+
+      const data = await response.json();
+      setScript(data);
     } catch (err) {
       console.error("Error generating script:", err);
       setError('Failed to generate script. Please try again.');
@@ -262,219 +199,162 @@ const App = () => {
 
   // Main application render
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-800 to-indigo-900 text-white p-6 font-sans antialiased">
-      <script src="https://cdn.tailwindcss.com"></script>
-      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
-      <style>{`
-        body { font-family: 'Inter', sans-serif; }
-        .card {
-          background: rgba(255, 255, 255, 0.1);
-          backdrop-filter: blur(10px);
-          border-radius: 1.5rem;
-          border: 1px solid rgba(255, 255, 255, 0.2);
-          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-        .btn {
-          @apply px-6 py-3 rounded-xl font-semibold transition-all duration-300 ease-in-out;
-          @apply bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-75;
-        }
-        .input-field {
-          /* Updated for black background and white text in dropdown */
-          @apply w-full p-3 rounded-lg bg-black text-white border border-gray-600 focus:border-purple-500 focus:ring focus:ring-purple-500 focus:ring-opacity-50;
-        }
-        .toggle-switch {
-          position: relative;
-          display: inline-block;
-          width: 60px;
-          height: 34px;
-        }
-        .toggle-switch input {
-          opacity: 0;
-          width: 0;
-          height: 0;
-        }
-        .slider {
-          position: absolute;
-          cursor: pointer;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background-color: #ccc;
-          transition: .4s;
-          border-radius: 34px;
-        }
-        .slider:before {
-          position: absolute;
-          content: "";
-          height: 26px;
-          width: 26px;
-          left: 4px;
-          bottom: 4px;
-          background-color: white;
-          transition: .4s;
-          border-radius: 50%;
-        }
-        input:checked + .slider {
-          background-color: #8B5CF6; /* Purple-500 */
-        }
-        input:focus + .slider {
-          box-shadow: 0 0 1px #8B5CF6;
-        }
-        input:checked + .slider:before {
-          transform: translateX(26px);
-        }
-        /* Specific style for dropdown options for better visibility on dark background */
-        .input-field option {
-          background-color: #000; /* Black background for options */
-          color: #fff; /* White text for options */
-        }
-      `}</style>
+    <div className="container">
+      <header className="app-header">
+        <h1 className="app-title">AI Script Generator</h1>
+        <p className="app-description">
+          Generate professional video scripts and convert them to speech with our AI-powered tool
+        </p>
+      </header>
 
-      <div className="container mx-auto max-w-4xl py-12">
-        <h1 className="text-5xl font-extrabold text-center mb-10 leading-tight">
-          🎥 Video Script <span className="text-purple-400">Gen</span>
-        </h1>
-
-        {/* Input Section */}
-        <div className="card p-8 mb-8">
-          <h2 className="text-2xl font-bold mb-4">Topic Input</h2>
+      <main className="main-content">
+        <div className="input-group">
+          <label htmlFor="topic" className="input-label">Video Topic</label>
           <input
             type="text"
-            className="input-field mb-4 text-gray-100" // Note: text-gray-100 is overwritten by text-white in .input-field
-            placeholder="Enter your video topic (e.g., 'Benefits of AI in daily life')"
+            id="topic"
+            className="text-input"
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
-            disabled={loading}
+            placeholder="Enter your video topic..."
           />
-          <button
-            onClick={generateScript}
-            className="btn w-full"
-            disabled={loading}
-          >
-            {loading ? 'Generating Script...' : 'Generate Script'}
-          </button>
-          {error && <p className="text-red-400 mt-4 text-center">{error}</p>}
         </div>
 
-        {/* Script Display */}
-        {script && (
-          <div className="card p-8 mb-8">
-            <h2 className="text-3xl font-bold text-purple-300 mb-6">{script.title}</h2>
-            <p className="text-sm text-gray-300 mb-6">Estimated Length: {script.videoLength}</p>
+        <div className="input-group">
+          <div className="duration-slider">
+            <label htmlFor="duration" className="input-label">Video Duration</label>
+            <input
+              type="range"
+              id="duration"
+              className="range-input"
+              min="1"
+              max="10"
+              step="1"
+              value={duration}
+              onChange={(e) => setDuration(parseInt(e.target.value))}
+            />
+            <div className="duration-display">
+              <span>1 min</span>
+              <span className="duration-value">{duration} minutes</span>
+              <span>10 min</span>
+            </div>
+          </div>
+        </div>
 
-            {script.sections.map((section, index) => (
-              <div key={index} className="mb-8 p-6 bg-gray-800 rounded-xl border border-gray-700">
-                <h3 className="text-xl font-semibold mb-3 text-purple-200">{section.type}: {section.heading}</h3>
-                <p className="text-gray-200 mb-3 leading-relaxed">{section.dialogue}</p>
-                <p className="text-gray-400 text-sm italic mb-2">
-                  <span className="font-medium text-gray-300">Scene:</span> {section.sceneDescription}
-                </p>
-                {section.brollSuggestions && section.brollSuggestions.length > 0 && (
-                  <p className="text-gray-400 text-sm italic">
-                    <span className="font-medium text-gray-300">B-roll:</span> {section.brollSuggestions.join(', ')}
-                  </p>
-                )}
-              </div>
-            ))}
+        <div className="toggle-container">
+          <label className="input-label">
+            <input
+              type="checkbox"
+              checked={useUploadedFile}
+              onChange={() => setUseUploadedFile(!useUploadedFile)}
+            />
+            Use uploaded script file
+          </label>
+        </div>
+
+        {useUploadedFile && (
+          <div className="file-input-container">
+            <label htmlFor="scriptFile" className="input-label">Upload Script File</label>
+            <input
+              type="file"
+              id="scriptFile"
+              className="text-input"
+              onChange={(e) => setSelectedFile(e.target.files[0])}
+              accept=".txt"
+            />
           </div>
         )}
 
-        {/* Voice Generation Section */}
-        <div className="card p-8">
-          <h2 className="text-2xl font-bold mb-4">Generate Voiceover</h2>
-
-          <div className="flex items-center justify-between mb-6">
-            <span className="text-gray-200">Use Uploaded File for Audio:</span>
-            <label className="toggle-switch">
-              <input
-                type="checkbox"
-                checked={useUploadedFile}
-                onChange={(e) => {
-                  setUseUploadedFile(e.target.checked);
-                  // Clear selected file if turning off file upload, or vice-versa
-                  if (!e.target.checked) setSelectedFile(null);
-                }}
-              />
-              <span className="slider"></span>
-            </label>
-          </div>
-
-          {useUploadedFile ? (
-            <div className="mb-4">
-              <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="text-file-upload">
-                Upload Text File (.txt):
-              </label>
-              <input
-                type="file"
-                id="text-file-upload"
-                accept=".txt"
-                onChange={handleFileChange}
-                className="input-field text-gray-100 file:mr-4 file:py-2 file:px-4
-                         file:rounded-full file:border-0
-                         file:text-sm file:font-semibold
-                         file:bg-purple-50 file:text-purple-700
-                         hover:file:bg-purple-100"
-                disabled={audioLoading}
-              />
-              {selectedFile && (
-                <p className="text-gray-400 text-sm mt-2">Selected: {selectedFile.name}</p>
-              )}
-            </div>
-          ) : (
-            <p className="text-gray-400 mb-4">Using dialogue from generated script.</p>
-          )}
-
-          <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="voice-select">
-            Select Voice:
-          </label>
+        <div className="input-group">
+          <label htmlFor="voice" className="input-label">Select Voice</label>
           <select
-            id="voice-select"
-            className="input-field mb-4" /* Applied input-field class for black background, text-white already in it */
+            id="voice"
+            className="select-input"
             value={selectedVoice}
             onChange={(e) => setSelectedVoice(e.target.value)}
-            disabled={audioLoading}
           >
-            {voiceOptions.map(voice => (
-              <option key={voice.id} value={voice.id}>{voice.name}</option>
+            {voiceOptions.map((voice) => (
+              <option key={voice.id} value={voice.id}>
+                {voice.name}
+              </option>
             ))}
           </select>
+        </div>
 
-          <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="pacing-slider">
-            Pacing: {pacing}%
+        <div className="input-group">
+          <label htmlFor="pacing" className="input-label">
+            Speech Pacing: {pacing}%
           </label>
           <input
             type="range"
-            id="pacing-slider"
+            id="pacing"
+            className="range-input"
             min="-50"
-            max="100"
-            step="1"
+            max="50"
             value={pacing}
             onChange={(e) => setPacing(parseInt(e.target.value))}
-            className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer mb-6"
-            disabled={audioLoading}
           />
-
-          <button
-            onClick={generateAudio}
-            className="btn w-full"
-            disabled={audioLoading || (useUploadedFile && !selectedFile) || (!useUploadedFile && !script)}
-          >
-            {audioLoading ? 'Generating Audio...' : 'Generate Voiceover'}
-          </button>
-          {audioError && <p className="text-red-400 mt-4 text-center">{audioError}</p>}
-          {audioUrl && (
-            <div className="mt-6 flex flex-col items-center">
-              <h4 className="text-xl font-semibold mb-3 text-purple-200">Listen to Voiceover</h4>
-              <audio controls src={audioUrl} className="w-full max-w-md">
-                Your browser does not support the audio element.
-              </audio>
-            </div>
-          )}
         </div>
-      </div>
+
+        <button
+          className="button"
+          onClick={generateScript}
+          disabled={loading || (!topic && !useUploadedFile)}
+        >
+          {loading ? <div className="loading-spinner"></div> : 'Generate Script'}
+        </button>
+
+        {error && <div className="error-message">{error}</div>}
+
+        {script && (
+          <div className="script-output">
+            <h2>{script.title}</h2>
+            <div className="sections-container">
+              {script.sections.map((section, index) => (
+                <div key={index} className="section-card">
+                  <h3 className="section-heading">{section.heading}</h3>
+                  <p>{section.dialogue}</p>
+                  <p><strong>Scene:</strong> {section.sceneDescription}</p>
+                  {section.brollSuggestions && (
+                    <>
+                      <strong>B-roll Suggestions:</strong>
+                      <ul className="broll-list">
+                        {section.brollSuggestions.map((suggestion, i) => (
+                          <li key={i} className="broll-item">{suggestion}</li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {script && !audioLoading && !audioUrl && (
+          <button
+            className="button"
+            onClick={generateAudio}
+            style={{ marginTop: '1rem' }}
+          >
+            Generate Audio
+          </button>
+        )}
+
+        {audioLoading && (
+          <div className="loading-spinner" style={{ margin: '1rem auto' }}></div>
+        )}
+
+        {audioError && <div className="error-message">{audioError}</div>}
+
+        {audioUrl && (
+          <audio controls className="audio-player" src={audioUrl}>
+            Your browser does not support the audio element.
+          </audio>
+        )}
+      </main>
     </div>
   );
-};
+}
 
 export default App;

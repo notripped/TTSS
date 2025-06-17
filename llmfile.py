@@ -3,7 +3,7 @@ import os # <--- NEW IMPORT: For accessing environment variables
 import google.generativeai as genai # <--- NEW IMPORT: Google Generative AI client library
 from google.generativeai.types import GenerationConfig # <--- NEW IMPORT: For structured output configuration
 
-def generate_video_script_llm(topic: str, output_filename: str = None) -> dict | None:
+def generate_video_script_llm(topic: str, duration: int = 3, output_filename: str = None) -> dict | None:
     """
     Generates a video script for a given topic using the Gemini 2.0 Flash model
     and optionally saves the output to a text file. This version uses the
